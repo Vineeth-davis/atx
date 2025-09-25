@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atrean-rag-platform"
+version = "1.0.0"
+description = "Synthetic Data Platform with RAG workflows and advanced agent capabilities"
+authors = [{name = "Atrean Team", email = "team@atrean.com"}]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.12.0",
+    "psycopg2-binary>=2.9.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "openai>=1.3.0",
+    "faiss-cpu>=1.7.4",
+    "numpy>=1.24.0",
+    "pandas>=2.1.0",
+    "openpyxl>=3.1.0",
+    "python-multipart>=0.0.6",
+    "python-dotenv>=1.0.0",
+    "structlog>=23.2.0",
+    "httpx>=0.25.0",
+    "streamlit>=1.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.7.0",
+]
+
+[project.scripts]
+atrean-api = "api.main:main"
+atrean-load-data = "scripts.load_dataset:main"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
