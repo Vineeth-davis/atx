@@ -10,11 +10,14 @@ from rag.nl2sql import NL2SQLGenerator
 from rag.advanced_sql_generator import advanced_sql_generator
 from rag.embeddings import embedding_service
 from agents.analysis_agent import analysis_agent
+from agents.enrichment_agent import enrichment_agent
 from db.connection import SessionLocal
 from db.models import QueryLog
+from api.logging_config import get_logger, log_query, log_performance
 import json
+from sqlalchemy import text
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class RAGOrchestrator:
     """Orchestrates the RAG workflow with multiple agents"""
@@ -25,6 +28,7 @@ class RAGOrchestrator:
         self.advanced_sql_generator = advanced_sql_generator
         self.embedding_service = embedding_service
         self.analysis_agent = analysis_agent
+        self.enrichment_agent = enrichment_agent
     
     def _determine_sql_generator(self, question: str) -> str:
         """
@@ -72,42 +76,58 @@ class RAGOrchestrator:
             
             # Step 1: Retrieval Agent - Get relevant schema context
             schema_context = await self.schema_retriever.retrieve_schema_context(question, k=10)
+            log_performance("schema_retrieval", 0, {"context_items": len(schema_context)}, query_id)
             
             # Step 2: Determine SQL generator based on query complexity
             generator_type = self._determine_sql_generator(question)
-            logger.info(f"Using {generator_type} SQL generator for query complexity")
+            logger.info(f"Using {generator_type} SQL generator for query complexity", extra={
+                'query_id': query_id,
+                'generator_type': generator_type
+            })
             
             # Step 3: Generate SQL using appropriate generator
             if generator_type == 'advanced':
                 sql_result = await self.advanced_sql_generator.generate_advanced_sql(question, schema_context)
             else:
                 sql_result = await self.nl2sql_generator.generate_sql(question, schema_context)
+            log_performance("sql_generation", 0, {"generator_type": generator_type}, query_id)
             
             # Step 4: Execution Agent - Execute SQL and get results
             execution_result = await self._execute_sql(sql_result.get('sql', ''))
+            log_performance("sql_execution", 0, {"row_count": len(execution_result.get('data', []))}, query_id)
             
             # Step 5: Analysis Agent - Analyze and format results
             analysis_result = await self.analysis_agent.analyze_results(
                 execution_result, question, sql_result, schema_context
             )
+            log_performance("analysis", 0, {"confidence": analysis_result.get('confidence', 0)}, query_id)
+            
+            # Step 6: Enrichment Agent - Enhance with external data
+            enriched_result = await self.enrichment_agent.enrich_query_results(
+                analysis_result, question, schema_context
+            )
+            log_performance("enrichment", 0, {"sources_used": len(enriched_result.get('external_data', {}))}, query_id)
             
             # Build final response
             response = {
                 'query_id': query_id,
                 'question': question,
                 'sql': sql_result.get('sql', ''),
-                'answer': analysis_result.get('answer', ''),
+                'answer': enriched_result.get('answer', ''),
                 'explanation': sql_result.get('explanation', ''),
-                'confidence': analysis_result.get('confidence', sql_result.get('confidence', 0.0)),
+                'confidence': enriched_result.get('confidence', sql_result.get('confidence', 0.0)),
                 'context_used': schema_context,
-                'validation': analysis_result.get('validation', sql_result.get('validation', {})),
-                'reasoning': analysis_result.get('reasoning', {}),
-                'insights': analysis_result.get('insights', []),
-                'data_preview': analysis_result.get('data_preview', []),
-                'summary': analysis_result.get('summary', ''),
+                'validation': enriched_result.get('validation', sql_result.get('validation', {})),
+                'reasoning': enriched_result.get('reasoning', {}),
+                'insights': enriched_result.get('insights', []),
+                'data_preview': enriched_result.get('data_preview', []),
+                'summary': enriched_result.get('summary', ''),
                 'generator_type': generator_type,
                 'features_used': sql_result.get('features_used', ''),
                 'complexity_analysis': sql_result.get('complexity_analysis', {}),
+                'enrichment': enriched_result.get('enrichment', {}),
+                'enrichment_insights': enriched_result.get('enrichment_insights', ''),
+                'external_data': enriched_result.get('external_data', {}),
                 'execution_time_ms': (datetime.utcnow() - start_time).total_seconds() * 1000,
                 'timestamp': start_time.isoformat(),
                 'user_id': user_id
@@ -179,8 +199,9 @@ class RAGOrchestrator:
             }
     
     async def _log_query(self, response: Dict[str, Any]):
-        """Log query to database"""
+        """Log query to database and structured logging"""
         try:
+            # Log to database
             with SessionLocal() as session:
                 query_log = QueryLog(
                     query_id=response.get('query_id', ''),
@@ -197,9 +218,26 @@ class RAGOrchestrator:
                 )
                 session.add(query_log)
                 session.commit()
+            
+            # Log to structured logging
+            log_query(
+                query_id=response.get('query_id', ''),
+                question=response.get('question', ''),
+                sql=response.get('sql', ''),
+                answer=response.get('answer', ''),
+                execution_time_ms=response.get('execution_time_ms', 0),
+                user_id=response.get('user_id'),
+                context_used=response.get('context_used', []),
+                validation_result=response.get('validation', {}),
+                error=response.get('error'),
+                enrichment_data=response.get('external_data', {})
+            )
                 
         except Exception as e:
-            logger.error(f"Error logging query: {e}")
+            logger.error(f"Error logging query: {e}", extra={
+                'query_id': response.get('query_id', ''),
+                'error': str(e)
+            })
     
     async def get_query_history(self, user_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
         """Get query history from database"""

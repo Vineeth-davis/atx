@@ -165,7 +165,17 @@ def main():
             "Show me the correlation between revenue and profit margins across industries"
         ]
         
-        all_questions = sample_questions + advanced_questions
+        # Enrichment sample questions
+        st.markdown("**Enrichment Examples:**")
+        enrichment_questions = [
+            "What are the current stock prices for companies in our database?",
+            "Show me recent SEC filings for public companies",
+            "Get latest market insights and trends for our entities",
+            "What are the real-time financial metrics for our companies?",
+            "Find recent news and analysis about our top performing entities"
+        ]
+        
+        all_questions = sample_questions + advanced_questions + enrichment_questions
         
         for i, sample_q in enumerate(all_questions):
             if st.button(f"Q{i+1}: {sample_q[:30]}...", key=f"sample_{i}"):
@@ -297,6 +307,51 @@ def main():
                                     st.write(f"**Complexity Score**: {complexity.get('score', 0)}/6")
                                     if complexity.get("required_features"):
                                         st.write(f"**Required Features**: {', '.join(complexity['required_features'])}")
+                        
+                        # Enrichment Data (if available)
+                        if response.get("enrichment") and response["enrichment"].get("enabled"):
+                            with st.expander("🔍 External Data Enrichment", expanded=True):
+                                enrichment = response["enrichment"]
+                                st.success("✅ External data enrichment enabled")
+                                
+                                if enrichment.get("sources_used"):
+                                    st.write(f"**Sources Used**: {', '.join(enrichment['sources_used'])}")
+                                
+                                if enrichment.get("timestamp"):
+                                    st.write(f"**Enrichment Time**: {enrichment['timestamp']}")
+                                
+                                # Display enrichment insights
+                                if response.get("enrichment_insights"):
+                                    st.write(f"**Enrichment Insights**: {response['enrichment_insights']}")
+                                
+                                # Display external data
+                                if response.get("external_data"):
+                                    external_data = response["external_data"]
+                                    
+                                    if "SEC" in external_data:
+                                        st.write("📋 **SEC EDGAR Data:**")
+                                        sec_data = external_data["SEC"]["data"]
+                                        st.write(f"  • **Company**: {sec_data.get('company_name', 'N/A')}")
+                                        st.write(f"  • **CIK**: {sec_data.get('cik', 'N/A')}")
+                                        if sec_data.get("financial_metrics"):
+                                            st.write("  • **Financial Metrics**:")
+                                            for metric, data in sec_data["financial_metrics"].items():
+                                                if isinstance(data, dict) and data.get("value"):
+                                                    st.write(f"    - {metric}: ${data['value']:,} ({data.get('unit', 'USD')})")
+                                    
+                                    if "Yahoo Finance" in external_data:
+                                        st.write("📈 **Yahoo Finance Data:**")
+                                        yahoo_data = external_data["Yahoo Finance"]["data"]
+                                        if yahoo_data.get("market_data"):
+                                            market_data = yahoo_data["market_data"]
+                                            st.write(f"  • **Current Price**: ${market_data.get('current_price', 0):.2f}")
+                                            st.write(f"  • **Market Cap**: ${market_data.get('market_cap', 0):,}")
+                                    
+                                    if "Perplexity" in external_data:
+                                        st.write("🤖 **AI Market Analysis:**")
+                                        perplexity_data = external_data["Perplexity"]["data"]
+                                        if perplexity_data.get("insights"):
+                                            st.write(perplexity_data["insights"])
                         
                         # SQL Query
                         if include_sql and response.get("sql"):

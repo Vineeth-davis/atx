@@ -9,9 +9,13 @@ import logging
 from contextlib import asynccontextmanager
 from api.routes import health, ask, schema, logs
 from api.config import settings
+from api.logging_config import setup_logging, get_logger
+from api.middleware import RequestIDMiddleware, QueryTracingMiddleware
 from agents.orchestrator import rag_orchestrator
 
-logger = logging.getLogger(__name__)
+# Setup logging first
+setup_logging()
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +41,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add middleware
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(QueryTracingMiddleware)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -52,8 +60,7 @@ app.include_router(ask.router, prefix="/ask", tags=["ask"])
 app.include_router(schema.router, prefix="/schema", tags=["schema"])
 app.include_router(logs.router, prefix="/logs", tags=["logs"])
 
-def main():
-    """Main entry point for the FastAPI application"""
+if __name__ == "__main__":
     uvicorn.run(
         "api.main:app",
         host="0.0.0.0",
@@ -61,6 +68,3 @@ def main():
         reload=settings.DEBUG,
         log_level=settings.LOG_LEVEL.lower()
     )
-
-if __name__ == "__main__":
-    main()

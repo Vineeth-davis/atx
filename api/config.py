@@ -56,8 +56,14 @@ class Settings(BaseSettings):
     PINECONE_ENVIRONMENT: Optional[str] = None
     
     # External APIs (Optional)
-    SEC_API_KEY: Optional[str] = None
+    SEC_API_KEY: Optional[str] = "b7624f105f9eb7087096925e0377c1dbeb01155dad058d22f643e2045a49ef39"
     YAHOO_FINANCE_API_KEY: Optional[str] = None
+    PERPLEXITY_API_KEY: Optional[str] = None
+    
+    # Enrichment Agent Configuration
+    ENABLE_ENRICHMENT: bool = True
+    ENRICHMENT_CACHE_TTL: int = 3600  # 1 hour cache
+    ENRICHMENT_TIMEOUT: int = 30  # 30 seconds timeout
     
     # Application Configuration
     APP_NAME: str = "Atrean RAG Platform"

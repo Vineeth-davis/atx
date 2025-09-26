@@ -1,15 +1,15 @@
 # api/routes/ask.py
 # Main question-answering endpoint
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 import uuid
 from datetime import datetime
-import logging
 from agents.orchestrator import rag_orchestrator
+from api.logging_config import get_logger, log_error
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 router = APIRouter()
 
 class AskRequest(BaseModel):
@@ -34,18 +34,29 @@ class AskResponse(BaseModel):
     generator_type: str = "basic"
     features_used: str = ""
     complexity_analysis: Dict[str, Any] = {}
+    enrichment: Dict[str, Any] = {}
+    enrichment_insights: str = ""
+    external_data: Dict[str, Any] = {}
     execution_time_ms: float
     timestamp: str
     user_id: Optional[str] = None
 
 @router.post("/", response_model=AskResponse)
-async def ask_question(request: AskRequest):
+async def ask_question(request: AskRequest, http_request: Request):
     """
     Main endpoint for asking questions about the dataset.
     Returns answer, SQL query, and context used.
     """
     try:
-        logger.info(f"Processing question: {request.question[:100]}...")
+        # Get request ID from middleware
+        request_id = getattr(http_request.state, 'request_id', None)
+        
+        logger.info(f"Processing question: {request.question[:100]}...", extra={
+            'request_id': request_id,
+            'user_id': request.user_id,
+            'include_sql': request.include_sql,
+            'include_context': request.include_context
+        })
         
         # Process question through RAG orchestrator
         result = await rag_orchestrator.process_question(
@@ -70,16 +81,38 @@ async def ask_question(request: AskRequest):
             generator_type=result.get('generator_type', 'basic'),
             features_used=result.get('features_used', ''),
             complexity_analysis=result.get('complexity_analysis', {}),
+            enrichment=result.get('enrichment', {}),
+            enrichment_insights=result.get('enrichment_insights', ''),
+            external_data=result.get('external_data', {}),
             execution_time_ms=result.get('execution_time_ms', 0),
             timestamp=result.get('timestamp', ''),
             user_id=result.get('user_id')
         )
         
-        logger.info(f"Successfully processed question in {response.execution_time_ms:.2f}ms")
+        logger.info(f"Successfully processed question in {response.execution_time_ms:.2f}ms", extra={
+            'request_id': request_id,
+            'query_id': response.query_id,
+            'execution_time_ms': response.execution_time_ms,
+            'confidence': response.confidence,
+            'enrichment_enabled': bool(response.enrichment)
+        })
+        
         return response
         
     except Exception as e:
-        logger.error(f"Error processing question: {e}")
+        request_id = getattr(http_request.state, 'request_id', None)
+        log_error(e, {
+            'question': request.question,
+            'user_id': request.user_id,
+            'include_sql': request.include_sql,
+            'include_context': request.include_context
+        }, request_id)
+        
+        logger.error(f"Error processing question: {e}", extra={
+            'request_id': request_id,
+            'error': str(e)
+        }, exc_info=True)
+        
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
 
 @router.get("/history")
