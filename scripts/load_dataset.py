@@ -84,9 +84,10 @@ class DatasetLoader:
                         Entity(
                             id=uuid.uuid4(),
                             name=str(row.get("name", row.get("Name", f"Entity {uuid.uuid4().hex[:6]}"))),
-                            sector=str(row.get("sector", row.get("Sector", "unknown"))),
-                            region=str(row.get("region", row.get("Region", "unknown"))),
-                            metadata=None,
+                            type=str(row.get("type", row.get("Type", "Private"))),
+                            industry=str(row.get("industry", row.get("Industry", "unknown"))),
+                            country=str(row.get("country", row.get("Country", "unknown"))),
+                            entity_metadata=None,
                         )
                     )
             else:
@@ -140,12 +141,11 @@ class DatasetLoader:
                             FinancialIncome(
                                 id=uuid.uuid4(),
                                 entity_id=entity.id,
-                                period=period,
+                                date=datetime.strptime(period, "%Y-%m"),
                                 revenue=revenue,
                                 cogs=cogs,
                                 gross_profit=gross,
-                                opex=opex,
-                                ebit=ebit,
+                                operating_expenses=opex,
                                 net_income=net,
                                 currency="USD",
                                 notes=None,
@@ -183,13 +183,10 @@ class DatasetLoader:
                             FinancialBalance(
                                 id=uuid.uuid4(),
                                 entity_id=entity.id,
-                                period=period,
+                                date=datetime.strptime(period, "%Y-%m"),
                                 assets=assets,
                                 liabilities=liabilities,
                                 equity=equity,
-                                cash=cash,
-                                receivables=receivables,
-                                payables=payables,
                                 currency="USD",
                                 notes=None,
                             )
@@ -300,17 +297,19 @@ class DatasetLoader:
         return None
 
     def _seed_entities_fallback(self, count: int) -> List[Entity]:
-        sectors = ["technology", "finance", "healthcare", "industrial", "energy", "consumer"]
-        regions = ["NA", "EU", "APAC", "LATAM"]
+        industries = ["Tech", "Finance", "Healthcare", "Manufacturing", "Retail"]
+        countries = ["USA", "UK", "Canada", "Germany", "France"]
+        entity_types = ["Public", "Private"]
         entities: List[Entity] = []
         for i in range(count):
             entities.append(
                 Entity(
                     id=uuid.uuid4(),
-                    name=f"Entity {uuid.uuid4().hex[:8]}",
-                    sector=random.choice(sectors),
-                    region=random.choice(regions),
-                    metadata=None,
+                    name=f"Company {i+1}",
+                    type=random.choice(entity_types),
+                    industry=random.choice(industries),
+                    country=random.choice(countries),
+                    entity_metadata=None,
                 )
             )
         return entities

@@ -7,5 +7,5 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create schema for the application
 CREATE SCHEMA IF NOT EXISTS atrean;
 
--- Grant permissions
-GRANT ALL PRIVILEGES ON SCHEMA atrean TO postgres;
+-- Note: User 'atx' is created automatically by Docker environment variables
+-- Privileges will be granted after user creation

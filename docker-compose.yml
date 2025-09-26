@@ -1,3 +1,4 @@
+# Main docker-compose file for easy access
 version: '3.8'
 
 services:
@@ -5,14 +6,14 @@ services:
     image: postgres:15
     container_name: atrean-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-atx_db}
-      POSTGRES_USER: ${POSTGRES_USER:-atx}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atx_pw}
+      POSTGRES_DB: atx_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: atx_pw
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./infra/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atx}"]
       interval: 10s
@@ -25,7 +26,7 @@ services:
     build: .
     container_name: atrean-app
     environment:
-      - DATABASE_URL=postgresql://atx:atx_pw@postgres:5432/atx_db
+      - DATABASE_URL=postgresql://postgres:atx_pw@postgres:5432/atx_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - VECTOR_STORE_TYPE=faiss
       - VECTOR_STORE_PATH=/app/data/vector_store
@@ -33,7 +34,6 @@ services:
       - LOG_LEVEL=INFO
     ports:
       - "8000:8000"  # FastAPI
-      - "8501:8501"  # Streamlit
     volumes:
       - ./data:/app/data
       - .:/app
@@ -45,6 +45,7 @@ services:
     command: >
       sh -c "
         echo 'Waiting for database...' &&
+        sleep 5 &&
         python scripts/load_dataset.py &&
         echo 'Starting FastAPI server...' &&
         python -m api.main
@@ -54,10 +55,11 @@ services:
     build: .
     container_name: atrean-streamlit
     environment:
-      - DATABASE_URL=postgresql://atx:atx_pw@postgres:5432/atx_db
+      - DATABASE_URL=postgresql://postgres:atx_pw@postgres:5432/atx_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_BASE_URL=http://app:8000  # Use Docker service name for container-to-container communication
     ports:
-      - "8502:8501"
+      - "8501:8501"
     volumes:
       - ./ui:/app/ui
       - .:/app

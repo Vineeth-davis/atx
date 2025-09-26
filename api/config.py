@@ -42,11 +42,11 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database Configuration
-    DATABASE_URL: str = "postgresql://atx:atx_pw@localhost:5432/atx_db"
+    DATABASE_URL: str = "postgresql://atx:atx_pw@postgres:5432/atx_db"
     
     # OpenAI Configuration (optional at import time; validate lazily where used)
-    OPENAI_API_KEY: Optional[str] = "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"
-    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_API_KEY: Optional[str] = "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"
+    OPENAI_MODEL: str = "gpt-3.5-turbo"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
     # Vector Store Configuration

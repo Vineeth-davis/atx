@@ -16,12 +16,11 @@ This platform enables natural language querying of multi-table relational datase
 - **Query Logging**: Comprehensive logging for debugging and observability
 - **Optional Streamlit UI**: Simple web interface for question answering
 
-## Quick Start
+## Quick Start with Docker
 
 ### Prerequisites
 
-- Python 3.11+
-- PostgreSQL (Docker recommended)
+- Docker and Docker Compose
 - OpenAI API key
 
 ### Installation
@@ -32,47 +31,66 @@ git clone <repository-url>
 cd atrean-rag-platform
 ```
 
-2. Create virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -e .
-```
-
-4. Set up environment variables:
+2. Set up environment variables:
 ```bash
 cp .env.example .env
-# Edit .env with your API keys and configuration
+# Edit .env with your OpenAI API key
 ```
 
-5. Start PostgreSQL with Docker:
+3. Build and start all services:
 ```bash
-cd infra
+make build
+make up
+```
+
+Or using docker-compose directly:
+```bash
+docker-compose build
 docker-compose up -d
 ```
 
-6. Load the dataset:
+4. Check service status:
 ```bash
-python scripts/load_dataset.py
+make status
 ```
 
-7. Build embeddings:
+5. View logs:
 ```bash
-python scripts/build_embeddings.py
+make logs
 ```
 
-8. Start the API server:
-```bash
-python -m api.main
-```
+### Services
 
-9. (Optional) Start Streamlit UI:
+- **FastAPI API**: http://localhost:8000
+- **Streamlit UI**: http://localhost:8501
+- **PostgreSQL**: localhost:5432
+
+### Available Commands
+
 ```bash
-streamlit run ui/streamlit_app.py
+# Build images
+make build
+
+# Start all services
+make up
+
+# Stop all services
+make down
+
+# View logs
+make logs
+
+# Load dataset manually
+make load-data
+
+# Open shell in app container
+make shell
+
+# Open PostgreSQL shell
+make db-shell
+
+# Clean up everything
+make clean
 ```
 
 ## API Endpoints
@@ -112,6 +130,9 @@ streamlit run ui/streamlit_app.py
 ├── infra/                 # Infrastructure
 │   ├── docker-compose.yml
 │   └── init.sql
+├── docker-compose.yml     # Main Docker Compose file
+├── Dockerfile            # Application Docker image
+├── Makefile              # Convenient commands
 └── ai_docs/               # Documentation
     ├── masterplan.md
     └── PROJECT_TASKS.md
@@ -122,20 +143,20 @@ streamlit run ui/streamlit_app.py
 ### Running Tests
 
 ```bash
-pytest
+make test
 ```
 
 ### Code Formatting
 
 ```bash
-black .
-isort .
+docker-compose exec app black .
+docker-compose exec app isort .
 ```
 
 ### Type Checking
 
 ```bash
-mypy .
+docker-compose exec app mypy .
 ```
 
 ## Demo Queries
@@ -152,7 +173,7 @@ Try these example questions:
 
 Key environment variables:
 
-- `DATABASE_URL`: PostgreSQL connection string
+- `DATABASE_URL`: PostgreSQL connection string (automatically set in Docker)
 - `OPENAI_API_KEY`: OpenAI API key for embeddings and NL→SQL
 - `VECTOR_STORE_TYPE`: Vector store type (faiss, pinecone)
 - `DEBUG`: Enable debug mode
@@ -166,6 +187,35 @@ The platform uses a multi-agent architecture:
 3. **NL→SQL Generator**: Converts natural language to SQL
 4. **Analysis Agent**: Formats and validates responses
 5. **Enrichment Agent**: Adds external data (optional)
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Database connection errors**: Ensure PostgreSQL container is healthy
+   ```bash
+   make logs-db
+   ```
+
+2. **API not responding**: Check app container logs
+   ```bash
+   make logs-app
+   ```
+
+3. **Dataset not loading**: Run dataset loader manually
+   ```bash
+   make load-data
+   ```
+
+4. **Port conflicts**: Ensure ports 8000, 8501, and 5432 are available
+
+### Reset Everything
+
+```bash
+make clean
+make build
+make up
+```
 
 ## Contributing
 

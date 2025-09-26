@@ -14,8 +14,9 @@ class Entity(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
-    sector = Column(String(100))
-    region = Column(String(100))
+    type = Column(String(100))  # Public, Private, etc.
+    industry = Column(String(100))  # Tech, Finance, Healthcare, etc.
+    country = Column(String(100))
     entity_metadata = Column(JSON)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -26,16 +27,15 @@ class Entity(Base):
 
 class FinancialIncome(Base):
     """Income statement data (time-series)"""
-    __tablename__ = "financials_income"
+    __tablename__ = "financial_income"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     entity_id = Column(UUID(as_uuid=True), ForeignKey("entities.id"), nullable=False)
-    period = Column(String(20), nullable=False)  # e.g., "2024-Q1", "2024-01"
+    date = Column(DateTime, nullable=False)
     revenue = Column(Float)
     cogs = Column(Float)
     gross_profit = Column(Float)
-    opex = Column(Float)
-    ebit = Column(Float)
+    operating_expenses = Column(Float)
     net_income = Column(Float)
     currency = Column(String(3), default="USD")
     notes = Column(Text)
@@ -46,17 +46,14 @@ class FinancialIncome(Base):
 
 class FinancialBalance(Base):
     """Balance sheet data (time-series)"""
-    __tablename__ = "financials_balance"
+    __tablename__ = "financial_balance"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     entity_id = Column(UUID(as_uuid=True), ForeignKey("entities.id"), nullable=False)
-    period = Column(String(20), nullable=False)
+    date = Column(DateTime, nullable=False)
     assets = Column(Float)
     liabilities = Column(Float)
     equity = Column(Float)
-    cash = Column(Float)
-    receivables = Column(Float)
-    payables = Column(Float)
     currency = Column(String(3), default="USD")
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -73,9 +70,8 @@ class Transaction(Base):
     date = Column(DateTime, nullable=False)
     type = Column(String(50), nullable=False)  # e.g., "investment", "dividend", "acquisition"
     amount = Column(Float, nullable=False)
+    description = Column(Text)
     currency = Column(String(3), default="USD")
-    counterparty = Column(String(255))
-    memo = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -87,11 +83,11 @@ class CRMCompany(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
-    stage = Column(String(50))  # e.g., "lead", "prospect", "customer"
-    owner = Column(String(100))
+    industry = Column(String(100))
+    contact_person = Column(String(255))
+    email = Column(String(255))
+    phone = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow)
-    tags = Column(Text)  # JSON string or comma-separated
-    description = Column(Text)
     
     # Relationships
     activities = relationship("CRMActivity", back_populates="company")
@@ -104,7 +100,6 @@ class CRMActivity(Base):
     company_id = Column(UUID(as_uuid=True), ForeignKey("crm_companies.id"), nullable=False)
     date = Column(DateTime, nullable=False)
     type = Column(String(50), nullable=False)  # e.g., "call", "email", "meeting"
-    actor = Column(String(100))
     notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -116,11 +111,14 @@ class QueryLog(Base):
     __tablename__ = "query_logs"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    trace_id = Column(String(36), nullable=False, unique=True)
+    query_id = Column(String(100), nullable=False, unique=True)
     question = Column(Text, nullable=False)
-    sql = Column(Text, nullable=False)
-    answer_preview = Column(Text)
-    latency_ms = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    sql_query = Column(Text, nullable=False)
+    answer = Column(Text)
+    confidence = Column(Float, default=0.0)
+    execution_time_ms = Column(Float, nullable=False)
+    context_used = Column(Text)  # JSON string of context references
+    validation_result = Column(Text)  # JSON string of validation results
+    user_id = Column(String(100))
+    timestamp = Column(DateTime, default=datetime.utcnow)
     error = Column(Text)
-    context_refs = Column(Text)  # JSON string of context references
