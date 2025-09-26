@@ -63,14 +63,32 @@ def get_query_history(api_url: str, user_id: str = None, limit: int = 10) -> lis
         st.error(f"Failed to fetch query history: {str(e)}")
         return []
 
+def get_rag_system_status(api_url: str) -> dict:
+    """Get RAG system status"""
+    try:
+        response = requests.get(f"{api_url}/health/ready", timeout=5)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException:
+        return {"status": "error", "rag_system": {"initialized": False}}
+
 def initialize_rag_system(api_url: str) -> bool:
     """Initialize the RAG system"""
     try:
-        response = requests.post(f"{api_url}/ask/initialize", timeout=60)
+        response = requests.post(f"{api_url}/health/rag/initialize", timeout=60)
         response.raise_for_status()
-        return True
+        result = response.json()
+        if result.get("status") == "success":
+            st.success(f"✅ {result.get('message', 'RAG system initialized')}")
+            if "stats" in result:
+                stats = result["stats"]
+                st.info(f"📊 Vector store: {stats.get('total_vectors', 0)} vectors, {stats.get('dimension', 0)} dimensions")
+            return True
+        else:
+            st.error(f"❌ {result.get('message', 'RAG system initialization failed')}")
+            return False
     except requests.exceptions.RequestException as e:
-        st.error(f"Failed to initialize RAG system: {str(e)}")
+        st.error(f"❌ Failed to initialize RAG system: {str(e)}")
         return False
 
 def main():
@@ -96,15 +114,31 @@ def main():
             else:
                 st.error("❌ API Connection Failed")
         
-        # Initialize RAG system
+        # RAG System Status
         st.markdown("---")
-        st.subheader("System")
-        if st.button("Initialize RAG System"):
+        st.subheader("RAG System Status")
+        
+        # Get and display RAG system status
+        rag_status = get_rag_system_status(api_url)
+        if rag_status.get("status") == "ready":
+            rag_system = rag_status.get("rag_system", {})
+            if rag_system.get("initialized", False):
+                st.success("✅ RAG System Ready")
+                st.info(f"📊 Vectors: {rag_system.get('vector_count', 0)}")
+                st.info(f"📐 Dimensions: {rag_system.get('dimension', 0)}")
+            else:
+                st.warning("⚠️ RAG System Not Initialized")
+        else:
+            st.error("❌ RAG System Error")
+            if "error" in rag_status:
+                st.error(f"Error: {rag_status['error']}")
+        
+        # Initialize RAG system button
+        if st.button("🔄 Initialize RAG System"):
             with st.spinner("Initializing RAG system..."):
-                if initialize_rag_system(api_url):
-                    st.success("✅ RAG System Initialized")
-                else:
-                    st.error("❌ RAG System Initialization Failed")
+                initialize_rag_system(api_url)
+                # Refresh the page to show updated status
+                st.rerun()
         
         # User ID for session tracking
         user_id = st.text_input("User ID (optional)", value="streamlit_user")
@@ -120,7 +154,20 @@ def main():
             "How many companies are in each country?"
         ]
         
-        for i, sample_q in enumerate(sample_questions):
+        # Advanced sample questions
+        st.markdown("**Advanced SQL Examples:**")
+        advanced_questions = [
+            "Rank entities by revenue within each industry and show their percentile rankings",
+            "Show me the running total of revenue over time with lag and lead comparisons",
+            "Calculate the standard deviation and variance of revenue by industry",
+            "Find entities with above-average revenue using CTEs and subqueries",
+            "Categorize entities into revenue tiers (high, medium, low) using CASE statements",
+            "Show me the correlation between revenue and profit margins across industries"
+        ]
+        
+        all_questions = sample_questions + advanced_questions
+        
+        for i, sample_q in enumerate(all_questions):
             if st.button(f"Q{i+1}: {sample_q[:30]}...", key=f"sample_{i}"):
                 st.session_state.sample_question = sample_q
                 st.rerun()
@@ -174,6 +221,83 @@ def main():
                         st.subheader("Answer")
                         st.write(response["answer"])
                         
+                        # Reasoning (if available)
+                        if response.get("reasoning"):
+                            reasoning = response["reasoning"]
+                            with st.expander("🧠 AI Reasoning", expanded=False):
+                                if isinstance(reasoning, dict):
+                                    for key, value in reasoning.items():
+                                        st.write(f"**{key.title()}**: {value}")
+                                else:
+                                    st.write(reasoning)
+                        
+                        # Insights (if available)
+                        if response.get("insights"):
+                            st.subheader("💡 Key Insights")
+                            for insight in response["insights"]:
+                                st.write(f"• {insight}")
+                        
+                        # Enhanced Validation Results
+                        if response.get("validation"):
+                            validation = response["validation"]
+                            with st.expander("🔍 Validation Details", expanded=False):
+                                if validation.get("is_valid"):
+                                    st.success("✅ Query execution successful")
+                                else:
+                                    st.error("❌ Query execution failed")
+                                
+                                if validation.get("warnings"):
+                                    st.warning("⚠️ Warnings:")
+                                    for warning in validation["warnings"]:
+                                        st.write(f"  • {warning}")
+                                
+                                if validation.get("errors"):
+                                    st.error("❌ Errors:")
+                                    for error in validation["errors"]:
+                                        st.write(f"  • {error}")
+                                
+                                # Data Quality Metrics
+                                if validation.get("data_quality"):
+                                    st.info("📊 Data Quality Metrics:")
+                                    quality = validation["data_quality"]
+                                    for metric_type, metrics in quality.items():
+                                        if metrics:
+                                            st.write(f"**{metric_type.replace('_', ' ').title()}**:")
+                                            for col, value in metrics.items():
+                                                if isinstance(value, dict):
+                                                    st.write(f"  • {col}: {value}")
+                                                else:
+                                                    st.write(f"  • {col}: {value}")
+                        
+                        # Data Preview (if available)
+                        if response.get("data_preview"):
+                            st.subheader("📋 Data Preview")
+                            preview_data = response["data_preview"]
+                            if preview_data:
+                                st.dataframe(preview_data)
+                            else:
+                                st.info("No data preview available")
+                        
+                        # Summary (if available)
+                        if response.get("summary"):
+                            with st.expander("📝 Analysis Summary", expanded=False):
+                                st.write(response["summary"])
+                        
+                        # Advanced SQL Features (if available)
+                        if response.get("generator_type") == "advanced":
+                            with st.expander("🚀 Advanced SQL Features", expanded=False):
+                                st.info(f"**Generator Type**: {response.get('generator_type', 'basic').title()}")
+                                
+                                if response.get("features_used"):
+                                    st.write(f"**Features Used**: {response['features_used']}")
+                                
+                                if response.get("complexity_analysis"):
+                                    complexity = response["complexity_analysis"]
+                                    st.write(f"**Complexity Level**: {complexity.get('level', 'unknown').title()}")
+                                    st.write(f"**Complexity Score**: {complexity.get('score', 0)}/6")
+                                    if complexity.get("required_features"):
+                                        st.write(f"**Required Features**: {', '.join(complexity['required_features'])}")
+                        
                         # SQL Query
                         if include_sql and response.get("sql"):
                             st.subheader("SQL Query")
@@ -198,18 +322,6 @@ def main():
                                 if description:
                                     st.write(f"  - {description}")
                                 st.write(f"  - Relevance: {score:.3f}")
-                        
-                        # Validation Results
-                        if response.get("validation"):
-                            validation = response["validation"]
-                            if validation.get("valid"):
-                                st.success("✅ SQL Query is valid")
-                            else:
-                                st.error("❌ SQL Query validation failed")
-                                for error in validation.get("errors", []):
-                                    st.error(f"  - {error}")
-                                for warning in validation.get("warnings", []):
-                                    st.warning(f"  - {warning}")
                         
                         # Metadata
                         st.subheader("Metadata")

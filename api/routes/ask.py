@@ -27,6 +27,13 @@ class AskResponse(BaseModel):
     confidence: float
     context_used: List[Dict[str, Any]]
     validation: Dict[str, Any]
+    reasoning: Dict[str, Any] = {}
+    insights: List[str] = []
+    data_preview: List[Dict[str, Any]] = []
+    summary: str = ""
+    generator_type: str = "basic"
+    features_used: str = ""
+    complexity_analysis: Dict[str, Any] = {}
     execution_time_ms: float
     timestamp: str
     user_id: Optional[str] = None
@@ -56,6 +63,13 @@ async def ask_question(request: AskRequest):
             confidence=result.get('confidence', 0.0),
             context_used=result.get('context_used', []) if request.include_context else [],
             validation=result.get('validation', {}),
+            reasoning=result.get('reasoning', {}),
+            insights=result.get('insights', []),
+            data_preview=result.get('data_preview', []),
+            summary=result.get('summary', ''),
+            generator_type=result.get('generator_type', 'basic'),
+            features_used=result.get('features_used', ''),
+            complexity_analysis=result.get('complexity_analysis', {}),
             execution_time_ms=result.get('execution_time_ms', 0),
             timestamp=result.get('timestamp', ''),
             user_id=result.get('user_id')

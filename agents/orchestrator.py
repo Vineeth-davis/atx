@@ -7,7 +7,9 @@ import logging
 from datetime import datetime
 from rag.retriever import SchemaRetriever
 from rag.nl2sql import NL2SQLGenerator
+from rag.advanced_sql_generator import advanced_sql_generator
 from rag.embeddings import embedding_service
+from agents.analysis_agent import analysis_agent
 from db.connection import SessionLocal
 from db.models import QueryLog
 import json
@@ -20,7 +22,36 @@ class RAGOrchestrator:
     def __init__(self):
         self.schema_retriever = SchemaRetriever()
         self.nl2sql_generator = NL2SQLGenerator()
+        self.advanced_sql_generator = advanced_sql_generator
         self.embedding_service = embedding_service
+        self.analysis_agent = analysis_agent
+    
+    def _determine_sql_generator(self, question: str) -> str:
+        """
+        Determine which SQL generator to use based on query complexity
+        
+        Args:
+            question: User's natural language question
+            
+        Returns:
+            'advanced' for complex queries, 'basic' for simple queries
+        """
+        # Keywords that indicate complex queries requiring advanced SQL features
+        complex_indicators = [
+            'rank', 'percentile', 'running total', 'cumulative', 'trend', 'growth',
+            'compare across', 'between', 'relationship', 'correlation', 'correlate',
+            'step by step', 'first calculate', 'then', 'intermediate', 'temporary',
+            'window', 'partition by', 'over time', 'lag', 'lead', 'previous', 'next',
+            'standard deviation', 'variance', 'distribution', 'statistics',
+            'if', 'when', 'condition', 'categorize', 'classify', 'bucket', 'segment',
+            'hierarchy', 'tree', 'parent', 'child', 'recursive'
+        ]
+        
+        question_lower = question.lower()
+        complexity_score = sum(1 for indicator in complex_indicators if indicator in question_lower)
+        
+        # Use advanced generator for queries with 2+ complexity indicators
+        return 'advanced' if complexity_score >= 2 else 'basic'
     
     async def process_question(self, question: str, user_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -42,14 +73,23 @@ class RAGOrchestrator:
             # Step 1: Retrieval Agent - Get relevant schema context
             schema_context = await self.schema_retriever.retrieve_schema_context(question, k=10)
             
-            # Step 2: Analysis Agent - Generate SQL from question and context
-            sql_result = await self.nl2sql_generator.generate_sql(question, schema_context)
+            # Step 2: Determine SQL generator based on query complexity
+            generator_type = self._determine_sql_generator(question)
+            logger.info(f"Using {generator_type} SQL generator for query complexity")
             
-            # Step 3: Execution Agent - Execute SQL and get results
+            # Step 3: Generate SQL using appropriate generator
+            if generator_type == 'advanced':
+                sql_result = await self.advanced_sql_generator.generate_advanced_sql(question, schema_context)
+            else:
+                sql_result = await self.nl2sql_generator.generate_sql(question, schema_context)
+            
+            # Step 4: Execution Agent - Execute SQL and get results
             execution_result = await self._execute_sql(sql_result.get('sql', ''))
             
-            # Step 4: Analysis Agent - Analyze and format results
-            analysis_result = await self._analyze_results(execution_result, question, sql_result)
+            # Step 5: Analysis Agent - Analyze and format results
+            analysis_result = await self.analysis_agent.analyze_results(
+                execution_result, question, sql_result, schema_context
+            )
             
             # Build final response
             response = {
@@ -58,9 +98,16 @@ class RAGOrchestrator:
                 'sql': sql_result.get('sql', ''),
                 'answer': analysis_result.get('answer', ''),
                 'explanation': sql_result.get('explanation', ''),
-                'confidence': sql_result.get('confidence', 0.0),
+                'confidence': analysis_result.get('confidence', sql_result.get('confidence', 0.0)),
                 'context_used': schema_context,
-                'validation': sql_result.get('validation', {}),
+                'validation': analysis_result.get('validation', sql_result.get('validation', {})),
+                'reasoning': analysis_result.get('reasoning', {}),
+                'insights': analysis_result.get('insights', []),
+                'data_preview': analysis_result.get('data_preview', []),
+                'summary': analysis_result.get('summary', ''),
+                'generator_type': generator_type,
+                'features_used': sql_result.get('features_used', ''),
+                'complexity_analysis': sql_result.get('complexity_analysis', {}),
                 'execution_time_ms': (datetime.utcnow() - start_time).total_seconds() * 1000,
                 'timestamp': start_time.isoformat(),
                 'user_id': user_id
@@ -85,6 +132,10 @@ class RAGOrchestrator:
                 'confidence': 0.0,
                 'context_used': [],
                 'validation': {'valid': False, 'errors': [str(e)]},
+                'reasoning': {'reasoning': f'Error occurred: {str(e)}'},
+                'insights': ['Unable to generate insights due to error'],
+                'data_preview': [],
+                'summary': 'Processing failed',
                 'execution_time_ms': (datetime.utcnow() - start_time).total_seconds() * 1000,
                 'timestamp': start_time.isoformat(),
                 'user_id': user_id,
@@ -125,71 +176,6 @@ class RAGOrchestrator:
                 'success': False,
                 'error': str(e),
                 'data': []
-            }
-    
-    async def _analyze_results(self, execution_result: Dict[str, Any], question: str, sql_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze execution results and generate human-readable answer"""
-        try:
-            if not execution_result.get('success', False):
-                return {
-                    'answer': f"Query execution failed: {execution_result.get('error', 'Unknown error')}",
-                    'summary': 'Unable to execute the generated SQL query'
-                }
-            
-            data = execution_result.get('data', [])
-            row_count = execution_result.get('row_count', 0)
-            
-            if row_count == 0:
-                return {
-                    'answer': 'No data found matching your criteria.',
-                    'summary': 'The query returned no results'
-                }
-            
-            # Generate summary based on data
-            if row_count == 1:
-                # Single row result
-                row = data[0]
-                if len(row) == 1:
-                    # Single value
-                    key, value = next(iter(row.items()))
-                    answer = f"The {key.replace('_', ' ')} is {value}"
-                else:
-                    # Multiple columns
-                    answer = f"Found 1 result: {', '.join([f'{k}: {v}' for k, v in row.items()])}"
-            else:
-                # Multiple rows
-                answer = f"Found {row_count} results"
-                
-                # Add summary statistics if applicable
-                numeric_columns = []
-                for col in execution_result.get('columns', []):
-                    if any(isinstance(row.get(col), (int, float)) for row in data if row.get(col) is not None):
-                        numeric_columns.append(col)
-                
-                if numeric_columns:
-                    summary_stats = []
-                    for col in numeric_columns:
-                        values = [row[col] for row in data if row[col] is not None]
-                        if values:
-                            avg_val = sum(values) / len(values)
-                            max_val = max(values)
-                            min_val = min(values)
-                            summary_stats.append(f"{col}: avg={avg_val:.2f}, max={max_val}, min={min_val}")
-                    
-                    if summary_stats:
-                        answer += f". Summary: {', '.join(summary_stats)}"
-            
-            return {
-                'answer': answer,
-                'summary': f'Query returned {row_count} rows',
-                'data_preview': data[:5] if len(data) > 5 else data  # Show first 5 rows
-            }
-            
-        except Exception as e:
-            logger.error(f"Error analyzing results: {e}")
-            return {
-                'answer': f'Error analyzing results: {str(e)}',
-                'summary': 'Analysis failed'
             }
     
     async def _log_query(self, response: Dict[str, Any]):
@@ -246,13 +232,29 @@ class RAGOrchestrator:
             return []
     
     async def initialize_rag_system(self):
-        """Initialize the RAG system by building schema documents"""
+        """Initialize the RAG system by building schema documents and vector index"""
         try:
-            logger.info("Initializing RAG system...")
+            logger.info("🚀 Starting RAG system initialization...")
+            
+            # Check if vector store already exists and has data
+            stats = self.schema_retriever.vector_store.get_stats()
+            if stats['total_vectors'] > 0:
+                logger.info(f"📊 Found existing vector store with {stats['total_vectors']} vectors")
+                logger.info("✅ RAG system already initialized - skipping rebuild")
+                return
+            
+            logger.info("📚 Building schema documents...")
             await self.schema_retriever.build_schema_documents()
-            logger.info("RAG system initialized successfully")
+            
+            # Verify initialization
+            final_stats = self.schema_retriever.vector_store.get_stats()
+            logger.info(f"✅ RAG system initialized successfully!")
+            logger.info(f"📈 Vector store stats: {final_stats['total_vectors']} vectors, {final_stats['dimension']} dimensions")
+            
         except Exception as e:
-            logger.error(f"Error initializing RAG system: {e}")
+            logger.error(f"❌ Error initializing RAG system: {e}")
+            logger.error("🔧 RAG system will work with reduced functionality")
+            # Don't raise the exception to allow graceful degradation
             raise
 
 # Global instance
