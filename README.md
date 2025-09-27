@@ -216,19 +216,3 @@ make clean
 make build
 make up
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-[Add your license here]
-
-## Support
-
-For questions or issues, please [create an issue](link-to-issues) or contact the development team.
