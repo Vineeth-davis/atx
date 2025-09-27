@@ -133,9 +133,6 @@ make clean
 ├── docker-compose.yml     # Main Docker Compose file
 ├── Dockerfile            # Application Docker image
 ├── Makefile              # Convenient commands
-└── ai_docs/               # Documentation
-    ├── masterplan.md
-    └── PROJECT_TASKS.md
 ```
 
 ## Development
