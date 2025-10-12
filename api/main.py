@@ -8,10 +8,19 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from api.routes import health, ask, schema, logs
+from api.routes import nl2sql
 from api.config import settings
 from api.logging_config import setup_logging, get_logger
 from api.middleware import RequestIDMiddleware, QueryTracingMiddleware
 from agents.orchestrator import rag_orchestrator
+from core.connection_manager import get_connection_manager
+from adapters.database_adapter import DatabaseType
+try:
+    from adapters.sqlserver_adapter import SQLServerAdapter
+    _sqlserver_available = True
+except Exception:
+    SQLServerAdapter = None  # type: ignore
+    _sqlserver_available = False
 
 # Setup logging first
 setup_logging()
@@ -23,6 +32,12 @@ async def lifespan(app: FastAPI):
     # Startup
     try:
         logger.info("🚀 Starting RAG system initialization...")
+        # Register known adapters (optional SQL Server adapter)
+        cm = get_connection_manager()
+        if _sqlserver_available and SQLServerAdapter is not None:
+            cm.register_adapter(DatabaseType.SQLSERVER, SQLServerAdapter)
+        else:
+            logger.info("SQL Server adapter not available; skipping registration")
         await rag_orchestrator.initialize_rag_system()
         logger.info("✅ RAG system initialization completed successfully")
     except Exception as e:
@@ -59,6 +74,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(ask.router, prefix="/ask", tags=["ask"])
 app.include_router(schema.router, prefix="/schema", tags=["schema"])
 app.include_router(logs.router, prefix="/logs", tags=["logs"])
+app.include_router(nl2sql.router, prefix="/nl2sql", tags=["nl2sql"])
 
 if __name__ == "__main__":
     uvicorn.run(

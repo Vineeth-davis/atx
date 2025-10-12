@@ -49,3 +49,7 @@ logs/
 # Local dev files
 .DS_Store
 Thumbs.db
+
+# project files
+ai_docs/
+api/config.py

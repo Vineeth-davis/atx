@@ -2,7 +2,7 @@
 # Semantic retrieval for schema and context
 
 from typing import List, Dict, Any, Optional
-from rag.vector_store import VectorStore
+from rag.vector_store import VectorStore, create_vector_store
 from rag.embeddings import embedding_service
 from db.models import Entity, FinancialIncome, FinancialBalance, Transaction, CRMCompany, CRMActivity
 from db.connection import SessionLocal
@@ -12,10 +12,15 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 class SchemaRetriever:
-    """Retrieves relevant schema information based on user questions"""
+    """Retrieves relevant schema information based on user questions.
+
+    Adapter-aware and namespaced so each external database (e.g., Puma SQL Server)
+    has isolated schema documents and FAISS index.
+    """
     
-    def __init__(self):
-        self.vector_store = VectorStore()
+    def __init__(self, namespace: str = "default"):
+        self.namespace = namespace
+        self.vector_store = create_vector_store(namespace=self.namespace)
         self.embedding_service = embedding_service
         self.schema_documents = []
     
@@ -156,42 +161,117 @@ class SchemaRetriever:
         }
         return descriptions.get(table_name, f'Table containing {table_name} data')
     
-    async def build_schema_documents(self):
-        """Build schema documents for vector indexing"""
+    async def build_schema_documents(self, adapter=None):
+        """Build schema documents for vector indexing from adapter or demo data."""
         try:
-            logger.info("Building schema documents for vector indexing...")
+            logger.info(f"Building schema documents for namespace: {self.namespace}")
             
             documents = []
             metadata_list = []
             
-            # Get all table information
-            with SessionLocal() as session:
-                tables = ['entities', 'financial_income', 'financial_balance', 'transactions', 'crm_companies', 'crm_activities']
+            if adapter and hasattr(adapter, 'get_schema'):
+                # Build from real adapter schema
+                logger.info("Building schema documents from adapter...")
+                schema = await adapter.get_schema()
                 
-                for table_name in tables:
-                    table_context = await self._get_table_details(table_name, session)
-                    if table_context:
-                        # Create document for table overview
-                        table_doc = f"Table: {table_name}\nDescription: {table_context['description']}\nColumns: {', '.join([col['name'] for col in table_context['columns']])}"
-                        documents.append(table_doc)
-                        metadata_list.append({
-                            'type': 'table',
-                            'table': table_name,
-                            'description': table_context['description'],
-                            'row_count': table_context['row_count']
-                        })
+                for table in schema.tables[:50]:  # Limit to 50 tables
+                    # Table overview document
+                    table_doc = f"Table: {table.schema}.{table.name}"
+                    if table.description:
+                        table_doc += f"\nDescription: {table.description}"
+                    if table.business_domain:
+                        table_doc += f"\nBusiness Domain: {table.business_domain}"
+                    
+                    # Add column information
+                    column_info = []
+                    for col in table.columns[:25]:  # Limit to 25 columns per table
+                        col_desc = f"{col.name} ({col.data_type}"
+                        if col.is_primary_key:
+                            col_desc += ", primary key"
+                        if col.is_foreign_key:
+                            col_desc += ", foreign key"
+                        col_desc += ")"
+                        column_info.append(col_desc)
+                    
+                    if column_info:
+                        table_doc += f"\nColumns: {', '.join(column_info)}"
+                    
+                    documents.append(table_doc)
+                    metadata_list.append({
+                        'type': 'table',
+                        'table': f"{table.schema}.{table.name}",
+                        'description': table.description or f"Table {table.schema}.{table.name}",
+                        'business_domain': table.business_domain or 'general',
+                        'row_count': table.row_count,
+                        'namespace': self.namespace
+                    })
+                    
+                    # Individual column documents for better retrieval
+                    for col in table.columns[:25]:
+                        # Create more searchable column document
+                        col_doc = f"Table: {table.schema}.{table.name}\nColumn: {col.name}\nType: {col.data_type}"
                         
-                        # Create documents for each column
-                        for column in table_context['columns']:
-                            column_doc = f"Column: {table_name}.{column['name']}\nType: {column['type']}\nTable: {table_name}\nDescription: {self._get_column_description(table_name, column['name'])}"
-                            documents.append(column_doc)
+                        # Add table context to make it more searchable
+                        table_name_lower = table.name.lower()
+                        if 'vendor' in table_name_lower:
+                            col_doc += f"\nThis is a vendor-related column in the {table.name} table"
+                        elif 'purchase' in table_name_lower:
+                            col_doc += f"\nThis is a purchase-related column in the {table.name} table"
+                        elif 'order' in table_name_lower:
+                            col_doc += f"\nThis is an order-related column in the {table.name} table"
+                        
+                        if col.description:
+                            col_doc += f"\nDescription: {col.description}"
+                        if col.is_primary_key:
+                            col_doc += "\nPrimary Key: Yes"
+                        if col.is_foreign_key:
+                            col_doc += "\nForeign Key: Yes"
+                        if not col.is_nullable:
+                            col_doc += "\nNullable: No"
+                        
+                        documents.append(col_doc)
+                        metadata_list.append({
+                            'type': 'column',
+                            'table': f"{table.schema}.{table.name}",
+                            'column': col.name,
+                            'data_type': col.data_type,
+                            'description': col.description or f"{col.data_type} column",
+                            'is_primary_key': col.is_primary_key,
+                            'is_foreign_key': col.is_foreign_key,
+                            'namespace': self.namespace
+                        })
+            else:
+                # Fallback to demo data
+                logger.info("Building schema documents from demo data...")
+                with SessionLocal() as session:
+                    tables = ['entities', 'financial_income', 'financial_balance', 'transactions', 'crm_companies', 'crm_activities']
+                    
+                    for table_name in tables:
+                        table_context = await self._get_table_details(table_name, session)
+                        if table_context:
+                            # Create document for table overview
+                            table_doc = f"Table: {table_name}\nDescription: {table_context['description']}\nColumns: {', '.join([col['name'] for col in table_context['columns']])}"
+                            documents.append(table_doc)
                             metadata_list.append({
-                                'type': 'column',
+                                'type': 'table',
                                 'table': table_name,
-                                'column': column['name'],
-                                'data_type': column['type'],
-                                'description': self._get_column_description(table_name, column['name'])
+                                'description': table_context['description'],
+                                'row_count': table_context['row_count'],
+                                'namespace': self.namespace
                             })
+                            
+                            # Create documents for each column
+                            for column in table_context['columns']:
+                                column_doc = f"Column: {table_name}.{column['name']}\nType: {column['type']}\nTable: {table_name}\nDescription: {self._get_column_description(table_name, column['name'])}"
+                                documents.append(column_doc)
+                                metadata_list.append({
+                                    'type': 'column',
+                                    'table': table_name,
+                                    'column': column['name'],
+                                    'data_type': column['type'],
+                                    'description': self._get_column_description(table_name, column['name']),
+                                    'namespace': self.namespace
+                                })
             
             # Generate embeddings for all documents
             if documents:
@@ -262,8 +342,8 @@ class SchemaRetriever:
 class ContextRetriever:
     """Retrieves relevant data context for questions"""
     
-    def __init__(self):
-        self.vector_store = create_vector_store()
+    def __init__(self, namespace: str = "default"):
+        self.vector_store = create_vector_store(namespace=namespace)
         self.embedding_service = embedding_service
     
     async def retrieve_data_context(self, question: str, k: int = 5) -> List[Dict[str, Any]]:

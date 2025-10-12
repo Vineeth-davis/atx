@@ -14,13 +14,19 @@ from api.config import settings
 logger = logging.getLogger(__name__)
 
 class VectorStore:
-    """Vector store implementation with FAISS backend"""
+    """Vector store implementation with FAISS backend.
+
+    Supports namespacing so different datasets/schemas (e.g., Puma vs Atrean demo)
+    maintain independent indexes under separate directories.
+    """
     
-    def __init__(self):
+    def __init__(self, namespace: str = "default"):
         self.index = None
         self.metadata = []
         self.dimension = 1536  # OpenAI text-embedding-3-small dimension
-        self.store_path = Path(settings.VECTOR_STORE_PATH)
+        base_path = Path(settings.VECTOR_STORE_PATH)
+        # Create namespace-specific subdirectory to avoid cross-dataset contamination
+        self.store_path = base_path / namespace
         self.store_path.mkdir(parents=True, exist_ok=True)
         self.index_file = self.store_path / "faiss_index.bin"
         self.metadata_file = self.store_path / "metadata.pkl"
@@ -186,9 +192,9 @@ class PineconeVectorStore:
         pass
 
 # Factory function to create appropriate vector store
-def create_vector_store() -> VectorStore:
-    """Create vector store based on configuration"""
+def create_vector_store(namespace: str = "default") -> VectorStore:
+    """Create vector store based on configuration and namespace"""
     if settings.VECTOR_STORE_TYPE.lower() == "pinecone":
         return PineconeVectorStore()
     else:
-        return VectorStore()
+        return VectorStore(namespace=namespace)

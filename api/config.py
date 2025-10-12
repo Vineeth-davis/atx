@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://atx:atx_pw@postgres:5432/atx_db"
     
     # OpenAI Configuration (optional at import time; validate lazily where used)
-    OPENAI_API_KEY: Optional[str] = "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"
+    OPENAI_API_KEY: Optional[str] = ""
     OPENAI_MODEL: str = "gpt-3.5-turbo"
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     PINECONE_ENVIRONMENT: Optional[str] = None
     
     # External APIs (Optional)
-    SEC_API_KEY: Optional[str] = "b7624f105f9eb7087096925e0377c1dbeb01155dad058d22f643e2045a49ef39"
+    SEC_API_KEY: Optional[str] = None
     YAHOO_FINANCE_API_KEY: Optional[str] = None
     PERPLEXITY_API_KEY: Optional[str] = None
     

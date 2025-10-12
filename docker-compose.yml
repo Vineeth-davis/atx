@@ -32,6 +32,8 @@ services:
       - VECTOR_STORE_PATH=/app/data/vector_store
       - DEBUG=true
       - LOG_LEVEL=INFO
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
     ports:
       - "8000:8000"  # FastAPI
     volumes:
@@ -58,6 +60,10 @@ services:
       - DATABASE_URL=postgresql://postgres:atx_pw@postgres:5432/atx_db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - API_BASE_URL=http://app:8000  # Use Docker service name for container-to-container communication
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - VECTOR_STORE_TYPE=faiss
+      - VECTOR_STORE_PATH=/app/data/vector_store
     ports:
       - "8501:8501"
     volumes:
